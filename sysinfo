@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# sysinfo - quick system health report
+
+CYAN="\033[1;36m"; YELLOW="\033[1;33m"; RED="\033[1;31m"; GREEN="\033[1;32m"; RESET="\033[0m"
+hdr() { echo -e "\n${CYAN}--- $1 ---${RESET}"; }
+
+hdr "System"
+echo -e "${YELLOW}OS      :${RESET} $(. /etc/os-release && echo "$PRETTY_NAME")"
+echo -e "${YELLOW}Kernel  :${RESET} $(uname -r)"
+echo -e "${YELLOW}Uptime  :${RESET} $(uptime -p)"
+echo -e "${YELLOW}Shell   :${RESET} $SHELL"
+
+hdr "CPU"
+echo -e "${YELLOW}Model   :${RESET} $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)"
+echo -e "${YELLOW}Cores   :${RESET} $(nproc)"
+echo -e "${YELLOW}Load    :${RESET} $(cut -d' ' -f1-3 /proc/loadavg)  (1, 5, 15 min)"
+
+hdr "Memory"
+free -h | awk 'NR==1 || NR==2 || NR==3'
+
+hdr "Disk"
+df -h --output=source,size,used,avail,pcent / /home 2>/dev/null | awk '!seen[$0]++'
+usage=$(df / --output=pcent | tail -1 | tr -dc '0-9')
+if [ "$usage" -ge 85 ]; then
+    echo -e "${RED}Warning: root disk is ${usage}% full. Run 'cleanup'.${RESET}"
+fi
+
+hdr "Battery"
+bat=$(ls /sys/class/power_supply/ 2>/dev/null | grep -m1 '^BAT')
+if [ -n "$bat" ]; then
+    echo -e "${YELLOW}Level   :${RESET} $(cat /sys/class/power_supply/$bat/capacity)%"
+    echo -e "${YELLOW}Status  :${RESET} $(cat /sys/class/power_supply/$bat/status)"
+else
+    echo "No battery detected."
+fi
+
+hdr "Top 5 processes by memory"
+ps -eo pid,comm,%mem,%cpu --sort=-%mem | head -6
+
+hdr "Pending updates"
+count=$(apt list --upgradable 2>/dev/null | tail -n +2 | wc -l)
+if [ "$count" -gt 0 ]; then
+    echo -e "${YELLOW}${count} package(s) can be upgraded. Run 'update'.${RESET}"
+else
+    echo -e "${GREEN}System is up to date.${RESET}"
+fi
+echo
